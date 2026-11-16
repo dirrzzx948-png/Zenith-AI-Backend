@@ -10,16 +10,6 @@ const ALLOWED_MIME = new Set([
   "image/webp"
 ]);
 
-function getClientIp(req) {
-  const forwarded = req.headers["x-forwarded-for"];
-
-  const ip = Array.isArray(forwarded)
-    ? forwarded[0]
-    : String(forwarded || "").split(",")[0];
-
-  return (ip || "unknown").trim().slice(0, 80);
-}
-
 function applyCors(req, res) {
   const origin = req.headers.origin;
 
@@ -229,16 +219,16 @@ export default async function handler(req, res) {
     if (!upstream.ok) {
       console.error("[Zenith Gemini API]", {
         status: upstream.status,
-        message: data?.error?.message || "Provider request failed"
+        message: data?.error?.message || "Unknown provider error"
       });
 
-      return sendError(
-        res,
-        upstream.status === 429 ? 503 : 502,
-        upstream.status === 429
-          ? "AI is temporarily busy. Please try again."
-          : "AI provider request failed."
-      );
+      return res.status(502).json({
+        ok: false,
+        error: "AI provider request failed.",
+        providerStatus: upstream.status,
+        providerMessage:
+          data?.error?.message || "Unknown provider error"
+      });
     }
 
     const answer = (
