@@ -62,16 +62,8 @@ function applyCors(req, res) {
     res.setHeader("Vary", "Origin");
   }
 
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "POST, OPTIONS"
-  );
-
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type"
-  );
-
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Access-Control-Max-Age", "600");
 }
 
@@ -106,11 +98,7 @@ function validateMessages(messages) {
 
     cleaned.push({
       role: item.role,
-      parts: [
-        {
-          text: item.content.trim()
-        }
-      ]
+      parts: [{ text: item.content.trim() }]
     });
   }
 
@@ -184,22 +172,14 @@ export default async function handler(req, res) {
   }
 
   if (!process.env.GEMINI_API_KEY) {
-    return sendError(
-      res,
-      503,
-      "AI service is not configured"
-    );
+    return sendError(res, 503, "AI service is not configured");
   }
 
   if (
     !process.env.UPSTASH_REDIS_REST_URL ||
     !process.env.UPSTASH_REDIS_REST_TOKEN
   ) {
-    return sendError(
-      res,
-      503,
-      "Rate-limit service is not configured"
-    );
+    return sendError(res, 503, "Rate-limit service is not configured");
   }
 
   try {
@@ -240,9 +220,7 @@ export default async function handler(req, res) {
         String(
           Math.max(
             1,
-            Math.ceil(
-              (shortResult.reset - Date.now()) / 1000
-            )
+            Math.ceil((shortResult.reset - Date.now()) / 1000)
           )
         )
       );
@@ -262,9 +240,7 @@ export default async function handler(req, res) {
         String(
           Math.max(
             1,
-            Math.ceil(
-              (dailyResult.reset - Date.now()) / 1000
-            )
+            Math.ceil((dailyResult.reset - Date.now()) / 1000)
           )
         )
       );
@@ -334,9 +310,12 @@ export default async function handler(req, res) {
     const data = await upstream.json().catch(() => ({}));
 
     if (!upstream.ok) {
-      const status = upstream.status === 429
-        ? 503
-        : 502;
+      const status = upstream.status === 429 ? 503 : 502;
+
+      console.error("[Zenith Gemini API]", {
+        status: upstream.status,
+        message: data?.error?.message || "Provider request failed"
+      });
 
       return sendError(
         res,
@@ -356,11 +335,7 @@ export default async function handler(req, res) {
       .trim();
 
     if (!answer) {
-      return sendError(
-        res,
-        502,
-        "AI returned an empty response."
-      );
+      return sendError(res, 502, "AI returned an empty response.");
     }
 
     return res.status(200).json({
@@ -369,6 +344,12 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
+    console.error("[Zenith AI Runtime Error]", {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack
+    });
+
     const message = error instanceof Error
       ? error.message
       : "";
