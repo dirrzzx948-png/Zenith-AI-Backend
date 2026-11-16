@@ -170,7 +170,7 @@ export default async function handler(req, res) {
     }
 
     const model =
-      process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
     const controller = new AbortController();
 
