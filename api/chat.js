@@ -1,7 +1,4 @@
 
-import { Redis } from "@upstash/redis";
-import { Ratelimit } from "@upstash/ratelimit";
-
 const MAX_BODY_CHARS = 4_000_000;
 const MAX_HISTORY = 12;
 const MAX_TEXT_CHARS = 3000;
@@ -12,32 +9,6 @@ const ALLOWED_MIME = new Set([
   "image/png",
   "image/webp"
 ]);
-
-let redis;
-let shortLimiter;
-let dailyLimiter;
-
-function getLimiters() {
-  if (!redis) {
-    redis = Redis.fromEnv();
-
-    shortLimiter = new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(12, "10 m"),
-      prefix: "zenith-ai:short",
-      analytics: false
-    });
-
-    dailyLimiter = new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(80, "1 d"),
-      prefix: "zenith-ai:daily",
-      analytics: false
-    });
-  }
-
-  return { shortLimiter, dailyLimiter };
-}
 
 function getClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -175,13 +146,6 @@ export default async function handler(req, res) {
     return sendError(res, 503, "AI service is not configured");
   }
 
-  if (
-    !process.env.UPSTASH_REDIS_REST_URL ||
-    !process.env.UPSTASH_REDIS_REST_TOKEN
-  ) {
-    return sendError(res, 503, "Rate-limit service is not configured");
-  }
-
   try {
     const raw = typeof req.body === "string"
       ? req.body
@@ -203,53 +167,6 @@ export default async function handler(req, res) {
       messages[messages.length - 1].parts.unshift({
         inlineData: image
       });
-    }
-
-    const ip = getClientIp(req);
-
-    const {
-      shortLimiter: short,
-      dailyLimiter: daily
-    } = getLimiters();
-
-    const shortResult = await short.limit(ip);
-
-    if (!shortResult.success) {
-      res.setHeader(
-        "Retry-After",
-        String(
-          Math.max(
-            1,
-            Math.ceil((shortResult.reset - Date.now()) / 1000)
-          )
-        )
-      );
-
-      return sendError(
-        res,
-        429,
-        "Too many requests. Please try again later."
-      );
-    }
-
-    const dailyResult = await daily.limit(ip);
-
-    if (!dailyResult.success) {
-      res.setHeader(
-        "Retry-After",
-        String(
-          Math.max(
-            1,
-            Math.ceil((dailyResult.reset - Date.now()) / 1000)
-          )
-        )
-      );
-
-      return sendError(
-        res,
-        429,
-        "Daily usage limit reached. Please try again tomorrow."
-      );
     }
 
     const model =
@@ -310,8 +227,6 @@ export default async function handler(req, res) {
     const data = await upstream.json().catch(() => ({}));
 
     if (!upstream.ok) {
-      const status = upstream.status === 429 ? 503 : 502;
-
       console.error("[Zenith Gemini API]", {
         status: upstream.status,
         message: data?.error?.message || "Provider request failed"
@@ -319,7 +234,7 @@ export default async function handler(req, res) {
 
       return sendError(
         res,
-        status,
+        upstream.status === 429 ? 503 : 502,
         upstream.status === 429
           ? "AI is temporarily busy. Please try again."
           : "AI provider request failed."
